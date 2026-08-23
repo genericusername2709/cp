@@ -1,0 +1,2 @@
+[alias]
+bundle = "equip --bin main --minify libs --no-check --output bundle.rs"
