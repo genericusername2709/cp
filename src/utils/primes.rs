@@ -1,5 +1,3 @@
-use crate::ARR_LIMIT;
-
 #[derive(Default)]
 pub struct Prime {
     prime_seive: Vec<usize>,
@@ -8,12 +6,6 @@ pub struct Prime {
 #[allow(dead_code)]
 impl Prime {
     pub fn init_prime_seive(&mut self, till: usize) {
-        assert!(
-            till <= ARR_LIMIT,
-            "Array size too big! Expected max size: {}, got {}",
-            ARR_LIMIT,
-            till
-        );
         self.prime_seive = Vec::with_capacity(till + 1);
         self.prime_seive.push(0); // 0
         for _ in 0..till {
@@ -33,8 +25,8 @@ impl Prime {
     }
 
     pub fn get_prime_factors(&mut self, n: usize) -> Vec<usize> {
-        if self.prime_seive.len() == 0 {
-            self.init_prime_seive(ARR_LIMIT);
+        if self.prime_seive.len() < n {
+            self.init_prime_seive(n);
         }
         let mut prime_factors: Vec<usize> = Vec::new();
         let mut num = n;
