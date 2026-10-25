@@ -1,4 +1,3 @@
-use crate::ARR_LIMIT;
 use std::mem::swap;
 
 #[derive(Default)]
@@ -9,13 +8,6 @@ pub struct DisjointSetUnion {
 #[allow(dead_code)]
 impl DisjointSetUnion {
     pub fn new(size: usize) -> Self {
-        assert!(
-            size <= ARR_LIMIT,
-            "Array size too big! Expected max size: {}, got {}",
-            ARR_LIMIT,
-            size
-        );
-
         let mut init_dsu = Self {
             data: vec![(0, 0); size],
         };

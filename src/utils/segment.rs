@@ -1,3 +1,5 @@
+use std::fmt::Debug;
+
 #[derive(Default)]
 pub struct LazySegmentTree<T, U, F, M, C> {
     n: usize,
@@ -13,7 +15,7 @@ pub struct LazySegmentTree<T, U, F, M, C> {
 #[allow(dead_code)]
 impl<T, U, F, M, C> LazySegmentTree<T, U, F, M, C>
 where
-    T: Clone,
+    T: Clone + Default + Debug,
     U: Clone + PartialEq,
     F: Fn(&T, &T) -> T,
     M: Fn(&T, &U, usize) -> T,
@@ -43,7 +45,11 @@ where
 
     fn build(&mut self, arr: &[T], node: usize, l: usize, r: usize) {
         if l == r {
-            self.tree[node] = arr[l].clone();
+            self.tree[node] = if l < arr.len() {
+                arr[l].clone()
+            } else {
+                T::default()
+            };
             return;
         }
         let mid = l + (r - l) / 2;

@@ -42,7 +42,9 @@ impl Prime {
             prime_factors.push(self.prime_seive[num]);
             num = num / self.prime_seive[num];
         }
-
+        if num != 1 {
+            prime_factors.push(num);
+        }
         prime_factors
     }
 

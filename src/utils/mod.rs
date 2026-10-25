@@ -1,6 +1,5 @@
 use std::ops::{Div, Mul, Rem};
 
-pub mod bittree;
 pub mod comb;
 pub mod dsu;
 pub mod modulus;
@@ -12,6 +11,7 @@ pub mod segment;
 pub struct Utils<const MOD: i64> {
     pub prime: primes::Prime,
     pub comb: comb::Comb<MOD>,
+    pub preprocdata: Vec<Vec<i64>>,
 }
 
 #[allow(dead_code)]
@@ -71,6 +71,26 @@ impl RangeSetMinTree {
         Self::new(
             arr,
             i64::MAX,                      // Identity T
+            None,                          // Identity U
+            |a, b| *a.min(b),              // Op
+            |v, tag, _| tag.unwrap_or(*v), // Mapping
+            |_, new| *new,                 // Composition
+        )
+    }
+}
+
+// =========================================================================
+// 2. Range Set (Assignment) + Range Maximum
+// =========================================================================
+
+pub type RangeSetMaxTree = LazySegTreeFn<i64, Option<i64>>;
+
+#[allow(dead_code)]
+impl RangeSetMaxTree {
+    pub fn new_set_max(arr: &[i64]) -> Self {
+        Self::new(
+            arr,
+            i64::MIN,                      // Identity T
             None,                          // Identity U
             |a, b| *a.min(b),              // Op
             |v, tag, _| tag.unwrap_or(*v), // Mapping

@@ -1,138 +1,255 @@
 #![allow(unused_imports)]
 
 mod reader {
+    use std::io::{stdin, BufRead, BufReader, Stdin};
+
     #[derive(Default)]
-    pub struct Reader {
-        buffer: Vec<String>,
+    pub struct Reader<R> {
+        reader: R,
+        buffer: Vec<u8>,
+        cursor: usize,
     }
 
-    #[allow(dead_code)]
-    impl Reader {
-        // Reads next token from stdin - either from the current line - that is present in the #buffer
-        // or from reading new a line.
-        //
-        // It panics if the expected type of token is not present.
-        pub fn next<T: std::str::FromStr>(&mut self) -> T {
-            loop {
-                if let Some(token) = self.buffer.pop() {
-                    return token.parse().ok().expect("Failed to parse!");
-                }
-                self.fill_buff();
+    impl Reader<BufReader<Stdin>> {
+        pub fn new() -> Self {
+            Self {
+                reader: BufReader::with_capacity(1 << 20, stdin()), // 1MB buffer
+                buffer: Vec::new(),
+                cursor: 0,
             }
+        }
+    }
+
+    #[allow(unused)]
+    impl<R: BufRead> Reader<R> {
+        #[inline]
+        fn next_token_slice(&mut self) -> Option<(usize, usize)> {
+            loop {
+                while self.cursor < self.buffer.len() && self.buffer[self.cursor] <= b' ' {
+                    self.cursor += 1;
+                }
+
+                if self.cursor < self.buffer.len() {
+                    let start = self.cursor;
+                    while self.cursor < self.buffer.len() && self.buffer[self.cursor] > b' ' {
+                        self.cursor += 1;
+                    }
+                    return Some((start, self.cursor));
+                }
+
+                self.buffer.clear();
+                self.cursor = 0;
+                if self.reader.read_until(b'\n', &mut self.buffer).unwrap() == 0 {
+                    return None;
+                }
+            }
+        }
+
+        /// Reads the next single token
+        pub fn next<T: std::str::FromStr>(&mut self) -> T {
+            let (start, end) = self.next_token_slice().expect("Unexpected end of input");
+            let token_str = std::str::from_utf8(&self.buffer[start..end]).unwrap();
+            token_str.parse().ok().expect("Failed to parse!")
         }
 
         pub fn read_chars(&mut self) -> Vec<char> {
             self.next::<String>().chars().collect()
         }
 
-        // Reads and stores elems into a array, until first non-empty line ends.
-        pub fn read_arr<T: std::str::FromStr>(&mut self) -> Vec<T> {
-            let mut len = self.buffer.len();
-            while len == 0 {
-                self.fill_buff();
-                len = self.buffer.len();
+        /// Reads the next integer token
+        pub fn next_int<T: FastParsable>(&mut self) -> T {
+            let (start, end) = self.next_token_slice().expect("Unexpected end of input");
+            FastParsable::parse_bytes(&self.buffer[start..end]).expect("Failed to parse integer!")
+        }
+
+        #[inline]
+        fn fill_line_if_empty(&mut self) -> bool {
+            while self.cursor < self.buffer.len() && self.buffer[self.cursor] <= b' ' {
+                self.cursor += 1;
             }
-            self.buffer
-                .drain(..)
-                .map(|e| e.parse().ok().expect("Failed to parse!"))
-                .rev()
-                .collect()
+
+            if self.cursor >= self.buffer.len() {
+                self.buffer.clear();
+                self.cursor = 0;
+                if self.reader.read_until(b'\n', &mut self.buffer).unwrap() == 0 {
+                    return false; // EOF
+                }
+
+                while self.cursor < self.buffer.len() && self.buffer[self.cursor] <= b' ' {
+                    self.cursor += 1;
+                }
+            }
+            self.cursor < self.buffer.len()
         }
 
-        // Reads line, and puts it into the buffer
-        fn fill_buff(&mut self) {
-            let input = self.read_line();
-            self.buffer = input.split_whitespace().rev().map(String::from).collect();
+        #[inline]
+        fn next_line_token_slice(&mut self) -> Option<(usize, usize)> {
+            // Skip whitespace on the current line
+            while self.cursor < self.buffer.len() && self.buffer[self.cursor] <= b' ' {
+                self.cursor += 1;
+            }
+
+            if self.cursor >= self.buffer.len() {
+                return None;
+            }
+
+            let start = self.cursor;
+            while self.cursor < self.buffer.len() && self.buffer[self.cursor] > b' ' {
+                self.cursor += 1;
+            }
+
+            Some((start, self.cursor))
         }
 
-        pub fn read_line(&self) -> String {
-            let mut input = String::new();
-            std::io::stdin()
-                .read_line(&mut input)
-                .expect("Failed to read line");
-            input
+        /// Fast reading of a full array line
+        pub fn read_arr<T: std::str::FromStr>(&mut self) -> Vec<T> {
+            let mut arr = Vec::new();
+            if !self.fill_line_if_empty() {
+                return arr;
+            }
+
+            while let Some((start, end)) = self.next_line_token_slice() {
+                let token_str = std::str::from_utf8(&self.buffer[start..end]).unwrap();
+                arr.push(token_str.parse().ok().expect("Failed to parse!"));
+            }
+
+            arr
         }
+
+        /// Fast reading of a full array line
+        pub fn read_vec<T: std::str::FromStr>(&mut self, len: usize) -> Vec<T> {
+            let mut arr = Vec::with_capacity(len);
+            if !self.fill_line_if_empty() {
+                return arr;
+            }
+
+            while let Some((start, end)) = self.next_line_token_slice() {
+                let token_str = std::str::from_utf8(&self.buffer[start..end]).unwrap();
+                arr.push(token_str.parse().ok().expect("Failed to parse!"));
+            }
+
+            arr
+        }
+
+        /// Fast reading of a full array line
+        pub fn read_arr_int<T: FastParsable>(&mut self) -> Vec<T> {
+            let mut arr = Vec::new();
+            if !self.fill_line_if_empty() {
+                return arr;
+            }
+
+            while let Some((start, end)) = self.next_line_token_slice() {
+                let val = FastParsable::parse_bytes(&self.buffer[start..end])
+                    .expect("Failed to parse integer!");
+                arr.push(val);
+            }
+
+            arr
+        }
+
+        /// Fast reading of a full array line
+        pub fn read_vec_int<T: FastParsable>(&mut self, len: usize) -> Vec<T> {
+            let mut arr = Vec::with_capacity(len);
+            if !self.fill_line_if_empty() {
+                return arr;
+            }
+
+            while let Some((start, end)) = self.next_line_token_slice() {
+                let val = FastParsable::parse_bytes(&self.buffer[start..end])
+                    .expect("Failed to parse integer!");
+                arr.push(val);
+            }
+
+            arr
+        }
+    }
+
+    pub trait FastParsable: Sized {
+        fn parse_bytes(bytes: &[u8]) -> Option<Self>;
+    }
+
+    // Single macro generating the byte-parsing loop for any unsigned type
+    macro_rules! impl_fast_parse_unsigned {
+        ($($t:ty),*) => {
+            $(
+                impl FastParsable for $t {
+                    #[inline]
+                    fn parse_bytes(bytes: &[u8]) -> Option<Self> {
+                        if bytes.is_empty() { return None; }
+                        let mut val: $t = 0;
+                        for &b in bytes {
+                            if b < b'0' || b > b'9' { return None; }
+                            val = val * 10 + (b - b'0') as $t;
+                        }
+                        Some(val)
+                    }
+                }
+            )*
+        };
+    }
+
+    // Single macro generating the byte-parsing loop for any signed type
+    macro_rules! impl_fast_parse_signed {
+        ($($t:ty),*) => {
+            $(
+                impl FastParsable for $t {
+                    #[inline]
+                    fn parse_bytes(bytes: &[u8]) -> Option<Self> {
+                        if bytes.is_empty() { return None; }
+                        let (neg, rest) = if bytes[0] == b'-' {
+                            (true, &bytes[1..])
+                        } else {
+                            (false, bytes)
+                        };
+                        let mut val: $t = 0;
+                        for &b in rest {
+                            if b < b'0' || b > b'9' { return None; }
+                            val = val * 10 + (b - b'0') as $t;
+                        }
+                        Some(if neg { -val } else { val })
+                    }
+                }
+            )*
+        };
+    }
+
+    // Apply the implementation to all desired types in a single line each
+    impl_fast_parse_unsigned!(usize, u8, u16, u32, u64, u128);
+    impl_fast_parse_signed!(isize, i8, i16, i32, i64, i128);
+
+    #[macro_export]
+    macro_rules! parr {
+        ($writer: expr, $arr: expr) => {
+            for i in 0..$arr.len() {
+                write!(
+                    $writer,
+                    "{}{}",
+                    $arr[i],
+                    if i == $arr.len() { " " } else { "\n" }
+                );
+            }
+        };
+    }
+
+    #[macro_export]
+    macro_rules! pen {
+        ($writer: expr, $elem: expr) => {
+            write!($writer, "{}\n", $elem);
+        };
+    }
+
+    #[macro_export]
+    macro_rules! pes {
+        ($writer: expr, $elem: expr) => {
+            write!($writer, "{} ", $elem);
+        };
     }
 }
 mod utils {
     use std::ops::{Div, Mul, Rem};
 
-    pub mod bittree {
-        use crate::ARR_LIMIT;
-        use std::ops::{Add, AddAssign, Sub, SubAssign};
-
-        // Fenwick Tree (1-indexed)
-        #[derive(Default)]
-        pub struct BitTree<T>
-        where
-            T: Default + Copy + PartialEq + Add + Sub + AddAssign + SubAssign,
-        {
-            data: Vec<T>,
-        }
-
-        #[allow(dead_code)]
-        impl<T> BitTree<T>
-        where
-            T: Default + Copy + PartialEq + Add + Sub + AddAssign + SubAssign,
-        {
-            pub fn new(size: usize) -> Self {
-                assert!(
-                    size <= ARR_LIMIT,
-                    "Array size too big! Expected max size: {}, got {}",
-                    ARR_LIMIT,
-                    size
-                );
-
-                Self {
-                    data: vec![T::default(); size + 1],
-                }
-            }
-
-            pub fn init(arr: Vec<T>) -> Self {
-                let mut tree = Self::new(arr.len());
-                for i in 0..arr.len() {
-                    tree.update(i + 1, arr[i]);
-                }
-
-                tree
-            }
-
-            // 1-based indexing
-            pub fn update(&mut self, index: usize, val: T) {
-                let mut current = index;
-                while current < self.data.len() {
-                    self.data[current] += val;
-                    current += current & current.wrapping_neg();
-                }
-            }
-
-            // 1-based indexing
-            pub fn query(&self, lower: usize, upper: usize) -> T {
-                assert!(
-                        lower <= upper && upper <= self.data.len(),
-                        "Invalid Range or Range out-of-bounds, Got range [{} , {}], for Fenwick tree of size: {}",
-                        lower, upper, self.data.len()
-                    );
-
-                let mut result: T = T::default();
-                let mut current = upper;
-                while current > 0 {
-                    result += self.data[current];
-                    current -= current & current.wrapping_neg();
-                }
-                current = lower;
-                while current > 0 {
-                    result -= self.data[current];
-                    current -= current & current.wrapping_neg();
-                }
-
-                result
-            }
-        }
-    }
     pub mod comb {
         use crate::utils::modulus;
-        use crate::ARR_LIMIT;
 
         #[derive(Default)]
         pub struct Comb<const MOD: i64> {
@@ -143,13 +260,6 @@ mod utils {
         #[allow(dead_code)]
         impl<const MOD: i64> Comb<MOD> {
             pub fn populate_factorials(&mut self, till: usize) {
-                assert!(
-                    till <= ARR_LIMIT,
-                    "Array size too big! Expected max size: {}, got {}",
-                    ARR_LIMIT,
-                    till
-                );
-
                 self.factorials = vec![modulus::Mod::new(1); till];
                 self.inverse_factorials = vec![modulus::Mod::new(1); till];
 
@@ -159,20 +269,21 @@ mod utils {
                 }
             }
 
-            pub fn c(&mut self, n: usize, r: usize) -> modulus::Mod<MOD> {
-                assert!(
-                    n <= ARR_LIMIT,
-                    "Array size too big! Expected max size: {}, got {}",
-                    ARR_LIMIT,
-                    n
-                );
+            pub fn fac(&mut self, n: usize) -> modulus::Mod<MOD> {
+                if self.factorials.len() == 0 {
+                    self.populate_factorials(n);
+                }
 
+                self.factorials[n]
+            }
+
+            pub fn c(&mut self, n: usize, r: usize) -> modulus::Mod<MOD> {
                 if n < r {
                     return modulus::Mod::new(0);
                 }
 
                 if self.factorials.len() == 0 {
-                    self.populate_factorials(ARR_LIMIT);
+                    self.populate_factorials(n);
                 }
 
                 self.factorials[n] * self.inverse_factorials[n - r] * self.inverse_factorials[r]
@@ -180,7 +291,6 @@ mod utils {
         }
     }
     pub mod dsu {
-        use crate::ARR_LIMIT;
         use std::mem::swap;
 
         #[derive(Default)]
@@ -191,13 +301,6 @@ mod utils {
         #[allow(dead_code)]
         impl DisjointSetUnion {
             pub fn new(size: usize) -> Self {
-                assert!(
-                    size <= ARR_LIMIT,
-                    "Array size too big! Expected max size: {}, got {}",
-                    ARR_LIMIT,
-                    size
-                );
-
                 let mut init_dsu = Self {
                     data: vec![(0, 0); size],
                 };
@@ -448,7 +551,9 @@ mod utils {
                     prime_factors.push(self.prime_seive[num]);
                     num = num / self.prime_seive[num];
                 }
-
+                if num != 1 {
+                    prime_factors.push(num);
+                }
                 prime_factors
             }
 
@@ -506,6 +611,8 @@ mod utils {
         }
     }
     pub mod segment {
+        use std::fmt::Debug;
+
         #[derive(Default)]
         pub struct LazySegmentTree<T, U, F, M, C> {
             n: usize,
@@ -521,7 +628,7 @@ mod utils {
         #[allow(dead_code)]
         impl<T, U, F, M, C> LazySegmentTree<T, U, F, M, C>
         where
-            T: Clone,
+            T: Clone + Default + Debug,
             U: Clone + PartialEq,
             F: Fn(&T, &T) -> T,
             M: Fn(&T, &U, usize) -> T,
@@ -558,7 +665,11 @@ mod utils {
 
             fn build(&mut self, arr: &[T], node: usize, l: usize, r: usize) {
                 if l == r {
-                    self.tree[node] = arr[l].clone();
+                    self.tree[node] = if l < arr.len() {
+                        arr[l].clone()
+                    } else {
+                        T::default()
+                    };
                     return;
                 }
                 let mid = l + (r - l) / 2;
@@ -659,6 +770,7 @@ mod utils {
     pub struct Utils<const MOD: i64> {
         pub prime: primes::Prime,
         pub comb: comb::Comb<MOD>,
+        pub preprocdata: Vec<Vec<i64>>,
     }
 
     #[allow(dead_code)]
@@ -727,6 +839,26 @@ mod utils {
     }
 
     // =========================================================================
+    // 2. Range Set (Assignment) + Range Maximum
+    // =========================================================================
+
+    pub type RangeSetMaxTree = LazySegTreeFn<i64, Option<i64>>;
+
+    #[allow(dead_code)]
+    impl RangeSetMaxTree {
+        pub fn new_set_max(arr: &[i64]) -> Self {
+            Self::new(
+                arr,
+                i64::MIN,                      // Identity T
+                None,                          // Identity U
+                |a, b| *a.min(b),              // Op
+                |v, tag, _| tag.unwrap_or(*v), // Mapping
+                |_, new| *new,                 // Composition
+            )
+        }
+    }
+
+    // =========================================================================
     // 3. Point-Update / Range-Query Variants (Using dummy unit lazy tag `()`)
     // =========================================================================
     pub type PointUpdateTree<T> = LazySegTreeFn<T, ()>;
@@ -764,26 +896,83 @@ mod utils {
 
 use reader::Reader;
 use std::cmp::{max, min, Reverse};
-use std::collections::BinaryHeap;
-use std::io::{stdout, BufWriter, Stdout, Write};
+use std::collections::{BTreeMap, BTreeSet, BinaryHeap, HashMap};
+use std::convert::TryInto;
+use std::io::{stdout, BufReader, BufWriter, Stdin, Stdout, Write};
+
+use utils::dsu::DisjointSetUnion;
 use utils::modulus::Mod;
-use utils::Utils;
+use utils::{
+    gcd, lcm, LazySegTreeFn, PointUpdateTree, RangeAddSumTree, RangeGcdTree, RangeMaxTree,
+    RangeMinTree, RangeSetMaxTree, RangeSetMinTree, Utils,
+};
 
 // const MOD: i64 = 1_000_000_007;
 const MOD: i64 = 998_244_353;
+
 // const ARR_LIMIT: usize = 1 << 18;
-const ARR_LIMIT: usize = 1_000_005;
+// const ARR_LIMIT: usize = 1_000_005;
+const ARR_LIMIT: usize = 300_005;
 
 #[allow(unused)]
-fn solve(reader: &mut Reader, writer: &mut BufWriter<Stdout>, utils: &mut Utils<MOD>) {}
+fn solve(
+    t: usize,
+    r: &mut Reader<BufReader<Stdin>>,
+    w: &mut BufWriter<Stdout>,
+    utils: &mut Utils<MOD>,
+) {
+    let n: usize = r.next_int();
+    let q: usize = r.next_int();
+    let mut a: Vec<u8> = r.read_vec_int(n);
+    let nons: Vec<u8> = vec![1, 2, 4, 7, 8, 11, 13, 14];
+    let mut c = 0;
+    for i in 0..n {
+        for j in nons.iter() {
+            if a[i] == *j {
+                c += 1;
+            }
+        }
+    }
+    pes!(w, n - c);
+    for i in 0..q {
+        let qi = r.next_int::<usize>() - 1;
+        let qv: u8 = r.next_int();
+        let mut p = 0;
+        let mut cr = 0;
+        for j in nons.iter() {
+            if a[qi] == *j {
+                p = 1;
+            }
+            if qv == *j {
+                cr = 1;
+            }
+        }
+        a[qi] = qv;
+        c = c - p + cr;
+
+        if i == q - 1 {
+            pen!(w, n - c);
+        } else {
+            pes!(w, n - c);
+        }
+    }
+}
+
+#[allow(unused)]
+fn preproc(utils: &mut Utils<MOD>) {
+    // utils.comb.populate_factorials(ARR_LIMIT);
+    // utils.prime.init_prime_seive(ARR_LIMIT);
+    // utils.preprocdata.push(vec![0]);
+}
 
 #[allow(dead_code)]
 fn main() {
-    let mut reader: Reader = Reader::default();
+    let mut reader: Reader<BufReader<Stdin>> = Reader::new();
     let writer = &mut BufWriter::new(stdout());
     let mut utils = Utils::default();
-    let t: usize = reader.next(); // Read the number of test case
-    for _ in 0..t {
-        solve(&mut reader, writer, &mut utils);
+    preproc(&mut utils);
+    let t: usize = reader.next_int();
+    for i in 1..=t {
+        solve(i, &mut reader, writer, &mut utils);
     }
 }
