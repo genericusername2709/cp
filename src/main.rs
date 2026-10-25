@@ -19,6 +19,7 @@ use utils::{
 // const MOD: i64 = 1_000_000_007;
 const MOD: i64 = 998_244_353;
 
+#[allow(unused)]
 // const ARR_LIMIT: usize = 1 << 18;
 // const ARR_LIMIT: usize = 1_000_005;
 const ARR_LIMIT: usize = 300_005;
